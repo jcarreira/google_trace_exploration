@@ -8,6 +8,7 @@
 #include <map>
 
 using namespace std;
+std::vector<std::vector<std::string > > main_data;
 
 void Tokenize(const string& str,
         vector<string>& tokens,
@@ -29,6 +30,46 @@ void Tokenize(const string& str,
     }
 }
 
+uint64_t to_int(const std::string& str) {
+    std::istringstream iss(str);
+    uint64_t res;
+    iss >> res;
+    return res;
+}
+
+void average_time_between_remove_or_changed() {
+    uint64_t i = 0;
+    while (main_data[i][0] == "0")
+        i++;
+    while (main_data[i][2] == "0")
+        i++;
+
+    std::cout << "We are at i: " << i << std::endl;
+    uint64_t ts_before = to_int(main_data[i][0]);
+
+    // move to next
+    ++i;
+    while (main_data[i][2] == "0")
+        i++;
+
+    uint64_t count = 0;
+    uint64_t total = 0;
+    while (i < main_data.size()) {
+        uint64_t ts_now = to_int(main_data[i][0]);
+        uint64_t interval = ts_now - ts_before;
+        total += interval;
+        ts_before = ts_now;
+        count++;
+        ++i;
+        while (i < main_data.size() && main_data[i][2] == "0")
+            i++;
+    }
+
+    std::cout << "Average interval: " << total * 1.0 / count << std::endl;
+    std::cout << "count: " << count << std::endl;
+    std::cout << "total: " << total << std::endl;
+}
+
 int main() {
     std::ifstream fin("table_machine_events.csv");
 
@@ -42,7 +83,10 @@ int main() {
      //   std::cout << tokens[0] << " - " << tokens[1] << std::endl;
 
         m[tokens[2]]++;
+        main_data.push_back(tokens);
     }
+
+    average_time_between_remove_or_changed();
 
     for (auto it = m.begin(); it != m.end(); ++it) {
         std::cout << it->first << " " << it->second << std::endl;
