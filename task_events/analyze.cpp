@@ -11,9 +11,7 @@
 using namespace std;
 
 static const uint64_t GB = (1024*1024*1024);
-//static const char file[] = "minitable";
 static const char file[] = "table_task_events.csv";
-//static const uint64_t FILE_SIZE = 1*GB;
 static const uint64_t FILE_SIZE = 20*GB;
 char* data;
 
@@ -65,7 +63,6 @@ int main() {
 
     // find lines
     while (1) {
-       // std::cout << last << " " << size << std::endl;
         if (last >= size || !data[last])
             break;
 
