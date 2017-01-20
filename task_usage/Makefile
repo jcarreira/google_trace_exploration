@@ -1,7 +1,10 @@
-all: analyze convert analyze_resource_unpredictability
+all: analyze convert analyze_resource_unpredictability analyze_resources_used
 
 analyze: analyze.cpp
 	g++ -O3 -o analyze analyze.cpp --std=c++1z
+
+analyze_resources_used: analyze_resources_used.cpp
+	g++ -O3 -o analyze_resources_used analyze_resources_used.cpp --std=c++1z
 
 convert: convert.cpp
 	g++ -O3 -o convert convert.cpp --std=c++1z

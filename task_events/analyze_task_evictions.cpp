@@ -288,8 +288,8 @@ int main() {
 
     for (auto& event : event_results) {
         std::cout << event.timestamp << " "
-            << event.mem << " "
-            << event.cpu
+            << event.cpu << " "
+            << event.mem
             << "\n";
     }
 

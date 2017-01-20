@@ -27,7 +27,6 @@ void Tokenize(const string& str,
         if (s.size() == 0)
             s = "-1";
 
-        //std::cout << "Pushing " << s << std::endl;
         tokens.push_back(s);
 
         ++j; // skip delimiter
@@ -108,12 +107,12 @@ int main(int argc, char* argv[]) {
 
         uint64_t size = task_to_size[unique_task_id];
 
-        double mem_max = task_to_mem_max[unique_task_id];
         double cpu_max = task_to_cpu_max[unique_task_id];
+        double mem_max = task_to_mem_max[unique_task_id];
         double cpu_sum = task_to_cpu_sum[unique_task_id];
         double mem_sum = task_to_mem_sum[unique_task_id];
-        double cpu_avg = task_to_cpu_sum[unique_task_id] / size;
-        double mem_avg = task_to_mem_sum[unique_task_id] / size;
+        double cpu_avg = cpu_sum / size;
+        double mem_avg = mem_sum / size;
 
         if (cpu_sum == 0 || mem_sum == 0)
             continue;
@@ -121,14 +120,13 @@ int main(int argc, char* argv[]) {
         double ratio_mem = mem_max / mem_avg;
         double ratio_cpu = cpu_max / cpu_avg;
 
-        std::cout << mem_max << " "
+        std::cout
             << cpu_max << " "
-            //<< cpu_sum << " "
-            //<< mem_sum << " "
-            << mem_avg << " "
+            << mem_max << " "
             << cpu_avg << " "
-            << ratio_mem << " "
+            << mem_avg << " "
             << ratio_cpu << " "
+            << ratio_mem << " "
             << "\n";
     }
 

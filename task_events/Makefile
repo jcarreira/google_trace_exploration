@@ -1,4 +1,4 @@
-all: analyze_task_evictions analyze analyze_machine_cpu_mem analyze_task_cpu_mem
+all: analyze_task_evictions analyze analyze_machine_cpu_mem analyze_task_cpu_mem analyze_allocated_resources
 
 analyze_task_evictions: analyze_task_evictions.cpp
 	g++ -ggdb -o analyze_task_evictions analyze_task_evictions.cpp --std=c++1z -O3
@@ -12,6 +12,9 @@ analyze_machine_cpu_mem: analyze_machine_cpu_mem.cpp
 
 analyze_task_cpu_mem: analyze_task_cpu_mem.cpp
 	g++ -ggdb -o analyze_task_cpu_mem analyze_task_cpu_mem.cpp --std=c++1z -O3
+
+analyze_allocated_resources:analyze_allocated_resources.cpp
+	g++ -ggdb -o analyze_allocated_resources analyze_allocated_resources.cpp --std=c++1z -O3
 
 clean:
 	rm -rf analyze_task_evictions

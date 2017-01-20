@@ -9,6 +9,10 @@
 #include <cstring>
 #include <cassert>
 
+/*
+ For each task we print the ratio between task allocated resources and machine resources
+ */
+
 using namespace std;
 
 static const uint64_t GB = (1024*1024*1024);
