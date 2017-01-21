@@ -115,12 +115,6 @@ int main(int argc, char* argv[]) {
         double mem_double = string_to_T<double>(mem);
 
 
-//        if (machine_id == "" ||
-//                event_type == "" ||
-//                cpu == "" ||
-//                mem == "")
-//            continue;
-
         if (event_type == "1" ||
                 event_type == "7" ||
                 event_type == "8") {
