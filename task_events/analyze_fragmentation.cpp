@@ -39,8 +39,6 @@ uint64_t read_file(char*& data, const std::string& file) {
 
     uint64_t size = fread(data, 1, FILE_SIZE, fin);
 
-    std::cout << "Read file: " << file << " size: " << size << std::endl;
-
     fclose(fin);
     return size;
 }
@@ -49,8 +47,7 @@ void Tokenize(const string& str,
         vector<string>& tokens,
         const string& delimiters = " ")
 {
-    int i = 0;
-    int j = 0;
+    int i = 0, j = 0;
 
     while (1) {
         while (str[j] && str[j] != delimiters[0])
@@ -74,8 +71,7 @@ void Tokenize(uint64_t first, uint64_t last,
         vector<string>& tokens,
         const string& delimiters = " ")
 {
-    uint64_t i = first;
-    uint64_t j = first;
+    uint64_t i = first, j = first;
 
     while (1) {
         while(data[j] && data[j] != delimiters[0])
@@ -109,9 +105,7 @@ struct MachineEvent : public Event {
             double m) :
         Event(event_type, mid),
         cpu(c),
-        mem(m)
-    {}
-
+        mem(m) {}
 
     double cpu;
     double mem;
@@ -126,38 +120,41 @@ struct TaskEvent : public Event {
         Event(event_type, mid),
         task_id(tid),
         cpu(c),
-        mem(m)
-    {}
+        mem(m) {}
 
     std::string task_id;
     double cpu;
     double mem;
 };
 
+#define N_MACHINES (40000)
 // maps time to list of events
 std::map<uint64_t, std::vector<Event*>> events_map;
 // maps machine id to amount of CPU/mem allocated on that machine
-std::map<uint64_t, std::pair<double,double>> machine_to_allocated;
+bool machine_exists[N_MACHINES];
+std::pair<double,double> machine_to_allocated[N_MACHINES];
+//std::map<uint64_t, std::pair<double,double>> machine_to_allocated;
 // maps machine id to amount of CPU/mem available in that machine
-std::map<uint64_t, std::pair<double,double>> machine_to_capacity;
+//std::map<uint64_t, std::pair<double,double>> machine_to_capacity;
+std::pair<double,double> machine_to_capacity[N_MACHINES];
 // maps task id to amount of CPU/Mem allocated to that task
 std::map<std::string, std::pair<double,double>> task_to_allocated;
 // list of machine ids of machines that are fragmented
 std::set<uint64_t> fragmented_machines;
-uint64_t updated_while_running = 0;
 
+#define CPU_BIN_FRACTION 0.0
+#define MEM_BIN_FRACTION 0.0
 
 bool is_full_mem(uint64_t machine_id) {
     double mem_allocated = machine_to_allocated[machine_id].second;
     double mem_capacity = machine_to_capacity[machine_id].second;
-    return mem_allocated >= mem_capacity;
+    return mem_allocated >= mem_capacity * (1.0 - MEM_BIN_FRACTION);
 }
 
 bool is_full_cpu(uint64_t machine_id) {
     double cpu_allocated = machine_to_allocated[machine_id].first;
     double cpu_capacity = machine_to_capacity[machine_id].first;
-
-    return cpu_allocated >= cpu_capacity;
+    return cpu_allocated >= cpu_capacity * (1.0 - CPU_BIN_FRACTION);
 }
 
 bool is_fragmented(uint64_t machine_id) {
@@ -169,8 +166,11 @@ bool is_fragmented(uint64_t machine_id) {
     double mem_allocated = ma.second;
     double mem_capacity = mc.second;
 
-    return ( (cpu_allocated >= cpu_capacity) && !(mem_allocated >= mem_capacity)) ||
-        (!(cpu_allocated >= cpu_capacity) && (mem_allocated >= mem_capacity));
+    return (is_full_cpu(machine_id) && !is_full_mem(machine_id)) ||
+       (is_full_mem(machine_id) !! is_full_cpu(machine_id)); 
+            
+//            (cpu_allocated >= cpu_capacity) && !(mem_allocated >= mem_capacity)) ||
+//        (!(cpu_allocated >= cpu_capacity) && (mem_allocated >= mem_capacity));
 }
 
 uint64_t machine_counter = 0;
@@ -196,13 +196,23 @@ void read_machine_events(const std::string& file) {
     }
 }
 
-void update_fragmented_status(uint64_t machine_id) {
-    if (is_fragmented(machine_id))
-        fragmented_machines.insert(machine_id);
-    else if (fragmented_machines.find(machine_id) != fragmented_machines.end() &&
-            !is_fragmented(machine_id)) {
-        fragmented_machines.erase(fragmented_machines.find(machine_id));
+void remove_machine_from_fragmented(uint64_t machine_id) {
+    auto it = fragmented_machines.find(machine_id);
+    if (it != fragmented_machines.end()) {
+        fragmented_machines.erase(it);
     }
+}
+
+void update_fragmented_status(uint64_t machine_id) {
+    if (is_fragmented(machine_id)) {
+        fragmented_machines.insert(machine_id);
+    } else {
+        remove_machine_from_fragmented(machine_id);
+    }
+}
+
+void clear_datastructures() {
+    memset(machine_exists, 0, sizeof(machine_exists));
 }
 
 int main(int argc, char* argv[]) {
@@ -210,6 +220,9 @@ int main(int argc, char* argv[]) {
         puts("./analyze_allocated_resources <file>");
         return -1;
     }
+
+    clear_datastructures();
+
     std::cout << "Reading machine events" << std::endl;
     read_machine_events("../machine_events/table_machine_events.csv");
     std::cout << "Machine events done" << std::endl;
@@ -263,7 +276,7 @@ int main(int argc, char* argv[]) {
             std::cout 
                 << "Error machineid_to_uint. machine id: "
                << machine_id 
-                << std::endl;
+                << "\n";
             continue;
         }
 
@@ -290,11 +303,6 @@ int main(int argc, char* argv[]) {
         // accumulate all the wasted fragmented resources and print them
         for (const auto& machine_id : fragmented_machines) {
             if (!is_fragmented(machine_id)) {
-                std::cout << "Machine: " << machine_id << std::endl;
-                std::cout << "cpu capacity: " << machine_to_capacity[machine_id].first << std::endl;
-                std::cout << "mem capacity: " << machine_to_capacity[machine_id].second << std::endl;
-                std::cout << "cpu allocated: " << machine_to_allocated[machine_id].first << std::endl;
-                std::cout << "mem allocated: " << machine_to_allocated[machine_id].second << std::endl;
                 throw std::runtime_error("Machine is not fragmented");
             }
 
@@ -312,66 +320,48 @@ int main(int argc, char* argv[]) {
                 fragmented_cpu += wasted_cpu;
             }
         }
-        std::cout << time << " " << fragmented_cpu << " " << fragmented_mem << "\n";
 
+        printf("%lu %lf %lf\n", time, fragmented_cpu,fragmented_mem);
 
         // update all the events
         for (std::vector<Event*>::iterator ev = it->second.begin();
                 ev != it->second.end(); ++ev) {
             Event* e = *ev;
-                
-            //std::cout << "processing event" << std::endl;
 
+            uint64_t machine_id = e->machine_id;
             if (dynamic_cast<MachineEvent*>(e)) {
-                //std::cout << "machine event" << std::endl;
                 MachineEvent* me = dynamic_cast<MachineEvent*>(e);
-                uint64_t machine_id = me->machine_id;
 
                 if (me->event_type == "0") {//add
-             //       std::cout << "adding machine" << std::endl;
-                        machine_to_capacity[machine_id] = std::make_pair(me->cpu, me->mem);
+                    machine_to_capacity[machine_id] = std::make_pair(me->cpu, me->mem);
 
-                        auto ma = machine_to_allocated.find(machine_id);
-                        if (ma != machine_to_allocated.end()) {
-                            // machine was already here so we treat it has an update
-                            update_fragmented_status(machine_id);
-                            //if (is_fragmented(machine_id))
-                            //    fragmented_machines.insert(machine_id);
-                            //else if (fragmented_machines.find(machine_id) != fragmented_machines.end() &&
-                            //        !is_fragmented(machine_id)) {
-                            //    fragmented_machines.erase(machine_id); // remove from fragmented machines
-                            //}
-                        }
-                        ma->second = std::make_pair(0.0, 0.0);
-                } else if (me->event_type == "1") { //remove
-               //     std::cout << "removing machine" << std::endl;
-
-                    auto mc = machine_to_capacity.find(machine_id);
-                    if (mc != machine_to_capacity.end()) {
-                        machine_to_capacity.erase(mc);
-                        machine_to_allocated.erase(machine_to_allocated.find(machine_id));
+                    //auto ma = machine_to_allocated.find(machine_id);
+                    if (machine_exists[machine_id]) {
+                        //ma != machine_to_allocated.end()) {
+                        // machine was already here so we treat it has an update
+                        // of machine capacity
+                    } else {
+                        machine_to_allocated[machine_id] = std::make_pair(0.0, 0.0);
                     }
-                    if (fragmented_machines.find(machine_id) != fragmented_machines.end())
-                        fragmented_machines.erase(machine_id); // remove from fragmented machines
-                } else if (me->event_type == "2") { // update
-                //    std::cout << "updating machine" << std::endl;
-                    auto mc = machine_to_capacity.find(machine_id);
-                    mc->second = std::make_pair(me->cpu, me->mem);
-
-                    update_fragmented_status(machine_id);
-                    //if (is_fragmented(machine_id))
-                    //    fragmented_machines.insert(machine_id);
-                    //else if (fragmented_machines.find(machine_id) != fragmented_machines.end() &&
-                    //        !is_fragmented(machine_id)) {
-                    //    fragmented_machines.erase(machine_id); // remove from fragmented machines
+                    machine_exists[machine_id] = true;
+                } else if (me->event_type == "1") { //remove
+                    ////auto mc = machine_to_capacity.find(machine_id);
+                    ////if (mc != machine_to_capacity.end()) {
+                    //if (machine_exists[machine_id]) {
+                    //    //machine_to_capacity.erase(mc);
+                    //    //machine_to_allocated.erase(machine_to_allocated.find(machine_id));
                     //}
+
+                    remove_machine_from_fragmented(machine_id);
+                    machine_exists[machine_id] = false;
+                } else if (me->event_type == "2") { // update
+                    machine_to_capacity[machine_id] = std::make_pair(me->cpu, me->mem);
+                    machine_exists[machine_id] = true;
                 } else {
                     throw std::runtime_error("Error");
                 }
             } else {
-                //std::cout << "task event" << std::endl;
                 TaskEvent* te = dynamic_cast<TaskEvent*>(e);
-                uint64_t machine_id = te->machine_id;
                 const std::string& task_id = te->task_id;
                 if (te->event_type == "1") { // scheduled
                     //std::cout << "Adding task " << task_id << std::endl;
@@ -379,7 +369,6 @@ int main(int argc, char* argv[]) {
                     auto tta = task_to_allocated.find(task_id);
                     if (tta != task_to_allocated.end()) {
                         // already exists. need to remove resources
-                        // XXX this is copied from the remove case
                         //std::cout 
                         //    << "Error Task already exists. task id: "
                         //    << task_id
@@ -388,13 +377,7 @@ int main(int argc, char* argv[]) {
                         ma.first -= tta->second.first;
                         ma.second -= tta->second.second;
                         task_to_allocated.erase(tta);
-
-                        if (fragmented_machines.find(machine_id) != fragmented_machines.end() &&
-                                !is_fragmented(machine_id)) {
-                            fragmented_machines.erase(fragmented_machines.find(machine_id));
-                        }
                     }
-
                     auto& ta = task_to_allocated[task_id];
                     ta.first = te->cpu;
                     ta.second = te->mem;
@@ -402,14 +385,6 @@ int main(int argc, char* argv[]) {
                     auto& ma = machine_to_allocated[machine_id];
                     ma.first += te->cpu;
                     ma.second += te->mem;
-
-                    update_fragmented_status(machine_id);
-                    //if (is_fragmented(machine_id))
-                    //    fragmented_machines.insert(machine_id);
-                    //else if (fragmented_machines.find(machine_id) != fragmented_machines.end() &&
-                    //        !is_fragmented(machine_id)) {
-                    //    fragmented_machines.erase(fragmented_machines.find(machine_id));
-                    //}
                 } else if (te->event_type == "8") {// updated while running
                     auto tta = task_to_allocated.find(task_id);
                     if (tta == task_to_allocated.end()) {
@@ -425,38 +400,26 @@ int main(int argc, char* argv[]) {
                         ta.second = te->mem;
                         ma.first += te->cpu;
                         ma.second += te->mem;
-                        
-                        update_fragmented_status(machine_id);
                     }
                 } else if (te->event_type == "2" ||
                         (te->event_type == "3") ||
                         (te->event_type == "4") ||
                         (te->event_type == "5") ||
                         (te->event_type == "6")) {
-                    
-                    //std::cout << "Removing task " << task_id << std::endl;
-
                     auto it = task_to_allocated.find(task_id);
                     if (it != task_to_allocated.end()) {
                         auto& ma = machine_to_allocated[machine_id];
                         ma.first -= it->second.first;
                         ma.second -= it->second.second;
                         task_to_allocated.erase(it);
-                        
-                        update_fragmented_status(machine_id);
-
-                        //if (fragmented_machines.find(machine_id) != fragmented_machines.end() &&
-                        //        !is_fragmented(machine_id)) {
-                        //    fragmented_machines.erase(fragmented_machines.find(machine_id));
-                        //}
                     }
                 }
             }
+            update_fragmented_status(machine_id);
         }
     }
 
     std::cout << "Printing output. # events: " << events_map.size() << std::endl;
-    std::cout << "updated while running: " << updated_while_running << std::endl;
 
     return 0;
 }
