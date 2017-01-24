@@ -142,19 +142,19 @@ std::map<std::string, std::pair<double,double>> task_to_allocated;
 // list of machine ids of machines that are fragmented
 std::set<uint64_t> fragmented_machines;
 
-#define CPU_BIN_FRACTION 0.0
-#define MEM_BIN_FRACTION 0.0
+static double CPU_BIN_FRACTION = 0.1;
+//static double MEM_BIN_FRACTION = 0.1;
 
 bool is_full_mem(uint64_t machine_id) {
     double mem_allocated = machine_to_allocated[machine_id].second;
     double mem_capacity = machine_to_capacity[machine_id].second;
-    return mem_allocated >= mem_capacity * (1.0 - MEM_BIN_FRACTION);
+    return mem_allocated >= mem_capacity;
 }
 
 bool is_full_cpu(uint64_t machine_id) {
     double cpu_allocated = machine_to_allocated[machine_id].first;
     double cpu_capacity = machine_to_capacity[machine_id].first;
-    return cpu_allocated >= cpu_capacity * (1.0 - CPU_BIN_FRACTION);
+    return cpu_allocated >= (cpu_capacity * (1.0 - CPU_BIN_FRACTION));
 }
 
 bool is_fragmented(uint64_t machine_id) {
@@ -167,10 +167,7 @@ bool is_fragmented(uint64_t machine_id) {
     double mem_capacity = mc.second;
 
     return (is_full_cpu(machine_id) && !is_full_mem(machine_id)) ||
-       (is_full_mem(machine_id) !! is_full_cpu(machine_id)); 
-            
-//            (cpu_allocated >= cpu_capacity) && !(mem_allocated >= mem_capacity)) ||
-//        (!(cpu_allocated >= cpu_capacity) && (mem_allocated >= mem_capacity));
+       (is_full_mem(machine_id) && !is_full_cpu(machine_id)); 
 }
 
 uint64_t machine_counter = 0;
@@ -216,10 +213,13 @@ void clear_datastructures() {
 }
 
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        puts("./analyze_allocated_resources <file>");
+    if (argc != 3) {
+        puts("./analyze_allocated_resources <file> <fraction>");
         return -1;
     }
+
+    double fraction = to_T<double>(argv[2]);
+    CPU_BIN_FRACTION = fraction;
 
     clear_datastructures();
 
@@ -273,10 +273,10 @@ int main(int argc, char* argv[]) {
             continue;
 
         if (machineid_to_uint.find(machine_id) == machineid_to_uint.end()) {
-            std::cout 
-                << "Error machineid_to_uint. machine id: "
-               << machine_id 
-                << "\n";
+            //std::cout 
+            //    << "Error machineid_to_uint. machine id: "
+            //   << machine_id 
+            //    << "\n";
             continue;
         }
 
@@ -312,13 +312,16 @@ int main(int argc, char* argv[]) {
                 double wasted_mem = mem_capacity - mem_allocated;
                 assert(wasted_mem > 0);
                 fragmented_mem += wasted_mem;
-            } else {
-                double cpu_allocated = machine_to_allocated[machine_id].first;
-                double cpu_capacity = machine_to_capacity[machine_id].first;
-                double wasted_cpu = cpu_capacity - cpu_allocated;
-                assert(wasted_cpu > 0);
-                fragmented_cpu += wasted_cpu;
             }
+           
+           // for now dont care about fragmented CPU 
+            //else {
+            //    double cpu_allocated = machine_to_allocated[machine_id].first;
+            //    double cpu_capacity = machine_to_capacity[machine_id].first;
+            //    double wasted_cpu = cpu_capacity - cpu_allocated;
+            //    assert(wasted_cpu > 0);
+            //    fragmented_cpu += wasted_cpu;
+            //}
         }
 
         printf("%lu %lf %lf\n", time, fragmented_cpu,fragmented_mem);

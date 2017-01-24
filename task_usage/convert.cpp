@@ -67,17 +67,16 @@ int main(int argc, char* argv[]) {
         Tokenize(line, tokens, ",");
 
         std::cout
-            << "," << tokens[2] // job id
-            << "," << tokens[3] // task id
+            << tokens[0] // start_time
+            << "," << tokens[1] // end time
             << "," << tokens[4] // machine id
             << "," << tokens[5] // mean cpu usage
             << "," << tokens[6] // canonical memory usage
-            << "," << tokens[7] // assigned mem usage
-            << "," << tokens[10]// maximum mem usage
-            << "," << tokens[13]// maximum cpu usage
             << "\n";
 
     }
 
     return 0;
 }
+
+
