@@ -308,21 +308,6 @@ void compute_events_per_machine(
       }
 
       //assert(timestamp > lambda_lifetime_secs * MICROSEC_IN_SECOND);
-
-      //if (max_cpu > 0 && max_cpu < avg_cpu) {
-      //  std::cout << "machine_id: " << machine_id
-      //    << " avg_cpu: " << avg_cpu
-      //    << " max_cpu: " << max_cpu
-      //    << std::endl;
-      //  assert(0);
-      //}
-      //if (max_mem > 0 && max_mem < avg_mem) {
-      //  std::cout << "machine_id: " << machine_id
-      //    << " avg_mem: " << avg_mem
-      //    << " max_mem: " << max_mem
-      //    << std::endl;
-      //  assert(0);
-      //}
       time_to_max_resources[timestamp] = std::make_pair(max_cpu, max_mem);
       time_to_avg_resources[timestamp] = std::make_pair(avg_cpu, avg_mem);
 
@@ -349,27 +334,17 @@ void compute_events_per_machine(
 
         //max_cpu = std::max(max_cpu, time_to_max_resources[it2->first].first);
         //max_mem = std::max(max_mem, time_to_max_resources[it2->first].second);
-        max_cpu = std::max(max_cpu, time_to_avg_resources[it2->first].first);
-        max_mem = std::max(max_mem, time_to_avg_resources[it2->first].second);
-        //std::cout 
-        //  << "checking timestamp: " << it2->first
-        //  << " max_cpu:" << max_cpu
-        //  << " max_mem:" << max_mem
-        //  << std::endl;
+        auto v = time_to_avg_resources[it2->first];
+        max_cpu = std::max(max_cpu, v.first);
+        max_mem = std::max(max_mem, v.second);
       }
 
       double hole_cpu = (machine_cpu_capacity - max_cpu);
       double hole_mem = (machine_mem_capacity - max_mem);
-      //std::cout
-      //  << "hole_cpu: "<< hole_cpu
-      //  << "hole_mem: "<< hole_mem
-      //  << std::endl;
+      //std::cout //  << "hole_cpu: "<< hole_cpu //  << "hole_mem: "<< hole_mem //  << std::endl;
       //std::cout << "num_lambdas: "<< 0 << "\n";
-      //std::cout
-      //  << " machine_id: " << machine_id
-      //  << " max_cpu / machine_cpu_capacity: " << max_cpu / machine_cpu_capacity
-      //  << " max_mem / machine_mem_capacity: " << max_mem / machine_mem_capacity
-      //  << std::endl;
+      //std::cout //  << " machine_id: " << machine_id //  << " max_cpu / machine_cpu_capacity: " << max_cpu / machine_cpu_capacity
+      //  << " max_mem / machine_mem_capacity: " << max_mem / machine_mem_capacity //  << std::endl;
       if (max_cpu < machine_cpu_capacity
           && max_mem < machine_mem_capacity
           && hole_cpu >= lambda_cpu_size
@@ -398,8 +373,9 @@ void compute_events_per_machine(
         }
       }
 
-      cum_avg_cpu += time_to_avg_resources[timestamp].first;
-      cum_avg_mem += time_to_avg_resources[timestamp].second;
+      auto v = time_to_avg_resources[timestamp];
+      cum_avg_cpu += v.first;
+      cum_avg_mem += v.second;
       count++;
     }
     std::cout
@@ -409,18 +385,135 @@ void compute_events_per_machine(
       << " " << (cum_avg_mem / count) / machine_mem_capacity
       << " " << before_avg_avg_mem / machine_mem_capacity
       << "\n";
+  }
+}
 
-#if 0
-    if (cum_avg_cpu / count != before_avg_avg_cpu || cum_avg_mem / count != before_avg_avg_mem) {
-      std::cout
-        << "after machine_id: " << machine_id
-        << " avg_avg_cpu: " << (cum_avg_cpu / count)
-        << " before_avg_avg_cpu: " << before_avg_avg_cpu
-        << " avg_avg_mem: " << (cum_avg_mem / count)
-        << " before_avg_avg_mem: " << before_avg_avg_mem
-        << std::endl;
+void compute_events_per_machine_simple_policy(
+    int lambda_lifetime_secs,
+    double lambda_cpu_size,
+    double lambda_mem_size) {
+  // we traverse all machines
+  for (const auto& it : events_per_machine) {
+    uint64_t machine_id = it.first;
+
+    std::map<uint64_t, std::pair<double, double>> time_to_max_resources;
+    std::map<uint64_t, std::pair<double, double>> time_to_avg_resources;
+    //std::map<uint64_t, std::pair<double, double>> time_to_max_resources_prev;
+    //std::map<uint64_t, std::pair<double, double>> time_to_avg_resources_prev;
+    const auto& list_machine_events = it.second;
+
+    // we use this to compute the average of the average cpu and memory over time
+    double cum_avg_cpu = 0, cum_avg_mem = 0;
+    uint64_t count = 0;
+    
+    // we keep max_cpu and max_mem values as we traverse over time
+    double max_cpu = 0, max_mem = 0;
+    double avg_cpu = 0, avg_mem = 0;
+    double max_cpu_prev = 0, max_mem_prev = 0;
+    double avg_cpu_prev = 0, avg_mem_prev = 0;
+    // for each machine we traverse over time all events
+    for (const auto& timestamp_events : list_machine_events) {
+      uint64_t timestamp = timestamp_events.first;
+      const auto& vector_events = timestamp_events.second;
+
+      //max_cpu_prev = max_cpu;
+      //max_mem_prev = mem_cpu;
+      //avg_cpu_prev = avg_cpu;
+      //avg_mem_prev = avg_mem;
+
+      // for each timestamp we traverse all events in that timestamp
+      // and we keep the maximum amount of resources utilized
+      for (const auto& usage_event : vector_events) {
+        assert (dynamic_cast<UsageEvent*>(usage_event));
+        UsageEvent* e = dynamic_cast<UsageEvent*>(usage_event);
+        max_cpu += e->max_cpu;
+        max_mem += e->max_mem;
+        avg_cpu += e->avg_cpu;
+        avg_mem += e->avg_mem;
+      }
+
+      time_to_max_resources[timestamp] = std::make_pair(max_cpu, max_mem);
+      time_to_avg_resources[timestamp] = std::make_pair(avg_cpu, avg_mem);
+      //time_to_max_resources_prev[timestamp] = std::make_pair(max_cpu_prev, max_mem_prev);
+      //time_to_avg_resources_prev[timestamp] = std::make_pair(avg_cpu_prev, avg_mem_prev);
+
+      cum_avg_cpu += avg_cpu;
+      cum_avg_mem += avg_mem;
+      count++;
     }
-#endif
+
+    double before_avg_avg_cpu = (cum_avg_cpu / count);
+    double before_avg_avg_mem = (cum_avg_mem / count);
+
+    double machine_cpu_capacity = machine_to_capacity_cpu[machine_id];
+    double machine_mem_capacity = machine_to_capacity_mem[machine_id];
+    // traverse timestamps again
+    for (auto it = list_machine_events.begin(); it != list_machine_events.end(); ++it) {
+      uint64_t timestamp = it->first;
+      //std::cout <<"at timestamp: "<< timestamp << std::endl;
+
+      // we compute the max_cpu and mem in the seconds before
+      auto it2 = it;
+      double max_cpu = 0, max_mem = 0;
+      for (; US_TO_SEC(timestamp - it2->first) < lambda_lifetime_secs; --it2) {
+
+        //max_cpu = std::max(max_cpu, time_to_max_resources[it2->first].first);
+        //max_mem = std::max(max_mem, time_to_max_resources[it2->first].second);
+        auto v = time_to_avg_resources[it2->first];
+        max_cpu = std::max(max_cpu, v.first);
+        max_mem = std::max(max_mem, v.second);
+
+        if (it2 == list_machine_events.begin())
+          break;
+      }
+
+      double hole_cpu = (machine_cpu_capacity - max_cpu);
+      double hole_mem = (machine_mem_capacity - max_mem);
+      if (max_cpu < machine_cpu_capacity
+          && max_mem < machine_mem_capacity
+          && hole_cpu >= lambda_cpu_size
+          && hole_mem >= lambda_mem_size) {
+        double num_lambdas = std::floor(std::min(hole_cpu / lambda_cpu_size, hole_mem / lambda_mem_size));
+        assert(num_lambdas >= 0);
+        
+        auto it2 = it;
+        for (; US_TO_SEC(timestamp - it2->first) < lambda_lifetime_secs; --it2) {
+
+          auto iter_avg = time_to_avg_resources.find(it2->first);
+          auto iter_max = time_to_max_resources.find(it2->first);
+
+          assert(iter_avg != time_to_avg_resources.end());
+          assert(iter_max != time_to_max_resources.end());
+
+          iter_avg->second.first += num_lambdas * lambda_cpu_size;
+          iter_avg->second.second += num_lambdas * lambda_mem_size;
+
+          // may need to fix the max value
+          iter_max->second.first = std::max(iter_max->second.first, iter_avg->second.first);
+          iter_max->second.second = std::max(iter_max->second.second, iter_avg->second.second);
+          if (it2 == list_machine_events.begin())
+            break;
+        }
+      }
+    }
+    cum_avg_cpu = cum_avg_mem = count = 0;
+    for (const auto& timestamp_events : list_machine_events) {
+      uint64_t timestamp = timestamp_events.first;
+      time_to_max_resources[timestamp] = std::make_pair(max_cpu, max_mem);
+      time_to_avg_resources[timestamp] = std::make_pair(avg_cpu, avg_mem);
+
+      auto v = time_to_avg_resources[timestamp];
+      cum_avg_cpu += v.first;
+      cum_avg_mem += v.second;
+      count++;
+    }
+    std::cout
+      << machine_id
+      << " " << (cum_avg_cpu / count) / machine_cpu_capacity
+      << " " << before_avg_avg_cpu / machine_cpu_capacity
+      << " " << (cum_avg_mem / count) / machine_mem_capacity
+      << " " << before_avg_avg_mem / machine_mem_capacity
+      << "\n";
   }
 }
 
@@ -439,8 +532,9 @@ int main(int argc, char* argv[]) {
 
     std::string line;
 
-    compute_events_per_machine(
-        300, // seconds
+    //compute_events_per_machine(
+    compute_events_per_machine_simple_policy(
+        200, // seconds
         0.1, // cpu size,
         0.1); // mem size
 
