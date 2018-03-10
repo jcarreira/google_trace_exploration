@@ -7,6 +7,11 @@
 #include <iterator>
 #include <map>
 
+/** Prints for each timestamp the total amount
+  * of resource capacity (CPU and memory) 
+  * in the datacenter
+  */
+
 using namespace std;
 std::vector<std::vector<std::string > > main_data;
 

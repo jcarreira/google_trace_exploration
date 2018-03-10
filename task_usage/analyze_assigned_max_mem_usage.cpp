@@ -8,11 +8,10 @@
 #include <stdexcept>
 #include <map>
 
+// We start by exploring the difference between reserved and used memory
+
 // sanity checks
 // 1. check that maximum memory usage is strictly less than assigned memory usage
-// 2. 
-
-// We start by exploring the difference between reserved and used memory
 
 using namespace std;
 
