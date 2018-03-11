@@ -65,7 +65,8 @@ void Tokenize(uint64_t first, uint64_t last,
 
 int main(int argc, char* argv[]) {
     if (argc != 2) {
-        puts("./analyze_allocated_resources <file>");
+        // the input file is the concatenation of the task events files
+        puts("./analyze_allocated_resources <table_task_events.csv>");
         return -1;
     }
     std::string line;
