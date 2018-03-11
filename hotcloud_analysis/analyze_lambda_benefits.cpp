@@ -13,6 +13,10 @@
 #include <array>
 #include <cassert>
 #include <unordered_map>
+#include <memory>
+#include <atomic>
+#include <mutex>
+#include <thread>
 
 using namespace std;
 
@@ -142,7 +146,7 @@ struct UsageEvent : public Event {
 #define N_MACHINES (40000)
 #define N_TASKS (30 * MILLION)
 // maps time to list of events
-std::map<uint64_t, std::vector<Event*>> events_map;
+std::map<uint64_t, std::vector<std::shared_ptr<Event>>> events_map;
 // maps machine id to amount of CPU/mem allocated on that machine
 bool machine_exists[N_MACHINES];
 double machine_to_capacity_mem[N_MACHINES];
@@ -156,8 +160,87 @@ uint64_t machine_counter = 0;
 std::unordered_map<std::string, uint64_t> machineid_to_uint;
 
 // we keep a list of usage events per machine
-std::map<uint64_t, std::map<uint64_t, std::vector<Event*>>> events_per_machine;
-std::map<uint64_t, std::map<uint64_t, std::vector<Event*>>> new_events_per_machine;
+std::map<uint64_t, std::map<uint64_t, std::vector<std::shared_ptr<Event>>>> events_per_machine;
+
+void read_usage_events_thread(
+    std::ifstream& fin,
+    std::mutex& fin_mutex,
+    std::mutex& data_mutex,
+    std::atomic<int>& counter) {
+  std::string line;
+  while (1) {
+    fin_mutex.lock();
+    std::getline(fin, line);
+    fin_mutex.unlock();
+
+    std::vector<std::string> tokens;
+    Tokenize(line, tokens, " ");
+
+    assert(tokens.size() == 7);
+
+    uint64_t start_time = to_T<double>(tokens[0]);
+    uint64_t end_time = to_T<double>(tokens[1]);
+    std::string machine_id = tokens[2];
+    double avg_cpu = to_T<double>(tokens[3]);
+    double avg_mem = to_T<double>(tokens[4]);
+    double max_mem = to_T<double>(tokens[5]);
+    double max_cpu = to_T<double>(tokens[6]);
+
+    max_cpu = std::max(max_cpu, avg_cpu);
+    max_mem = std::max(max_mem, avg_mem);
+
+    if (machine_id == "")
+      continue;
+
+    // machineid not found
+    if (machineid_to_uint.find(machine_id) == machineid_to_uint.end())
+      continue;
+
+    uint64_t machine_uint = machineid_to_uint[machine_id];
+
+    auto ue_start = std::make_shared<UsageEvent>("", machine_uint, avg_cpu, avg_mem, max_cpu, max_mem);
+    auto ue_end = std::make_shared<UsageEvent>("", machine_uint, -avg_cpu, -avg_mem, -max_cpu, -max_mem);
+
+    data_mutex.lock();
+    events_map[start_time].push_back(ue_start);
+    events_map[end_time].push_back(ue_end);
+    events_per_machine[machine_uint][start_time].push_back(ue_start);
+    events_per_machine[machine_uint][end_time].push_back(ue_end);
+    data_mutex.unlock();
+
+    if (counter % 100000 == 0) {
+      std::cout << "usage file counter: " << counter << "\n";
+    }
+
+    counter += 1;
+  }
+}
+
+void read_usage_events_parallel(const std::string& file) {
+  std::vector<std::shared_ptr<std::thread>> threads;
+    
+  std::ifstream fin(file);
+  std::mutex fin_mutex;
+  std::mutex data_mutex;
+  std::atomic<int> counter;
+
+  std::atomic_init(&counter, 0);
+
+  for (int i = 0; i < 50; ++i) {
+    threads.push_back(
+        std::make_shared<std::thread>(
+          read_usage_events_thread,
+          std::ref(fin),
+          std::ref(fin_mutex),
+          std::ref(data_mutex),
+          std::ref(counter)
+          ));
+  }
+
+  for (auto& t : threads) {
+    t->join();
+  }
+}
 
 void read_usage_events(const std::string& file) {
     std::ifstream fin(file);
@@ -188,16 +271,17 @@ void read_usage_events(const std::string& file) {
             continue;
 
         uint64_t machine_uint = machineid_to_uint[machine_id];
-        events_map[start_time].push_back(new UsageEvent("", machine_uint, avg_cpu, avg_mem, max_cpu, max_mem));
-        events_map[end_time].push_back(new UsageEvent("", machine_uint, -avg_cpu, -avg_mem, -max_cpu, -max_mem));
 
-        events_per_machine[machine_uint][start_time].push_back(
-            new UsageEvent("", machine_uint, avg_cpu, avg_mem, max_cpu, max_mem));
-        events_per_machine[machine_uint][end_time].push_back(
-            new UsageEvent("", machine_uint, -avg_cpu, -avg_mem, -max_cpu, -max_mem));
+        auto ue_start = std::make_shared<UsageEvent>("", machine_uint, avg_cpu, avg_mem, max_cpu, max_mem);
+        auto ue_end = std::make_shared<UsageEvent>("", machine_uint, -avg_cpu, -avg_mem, -max_cpu, -max_mem);
+        events_map[start_time].push_back(ue_start);
+        events_map[end_time].push_back(ue_end);
+
+        events_per_machine[machine_uint][start_time].push_back(ue_start);
+        events_per_machine[machine_uint][end_time].push_back(ue_end);
 
         if (counter % 100000 == 0) {
-            std::cout << "counter: " << counter << "\n";
+            std::cout << "usage file counter: " << counter << "\n";
         }
 
         ++counter;
@@ -237,7 +321,7 @@ void read_machine_events(const std::string& file) {
           machine_to_capacity_cpu[machine_uint] = cpu;
         }
 
-        events_map[time].push_back(new MachineEvent(event_type, machine_uint, cpu, mem));
+        events_map[time].push_back(std::make_shared<MachineEvent>(event_type, machine_uint, cpu, mem));
     }
 }
 
@@ -284,27 +368,12 @@ void compute_events_per_machine(
       // for each timestamp we traverse all events in that timestamp
       // and we keep the maximum amount of resources utilized
       for (const auto& usage_event : vector_events) {
-        assert (dynamic_cast<UsageEvent*>(usage_event));
-        UsageEvent* e = dynamic_cast<UsageEvent*>(usage_event);
+        assert (dynamic_cast<UsageEvent*>(usage_event.get()));
+        UsageEvent* e = dynamic_cast<UsageEvent*>(usage_event.get());
         max_cpu += e->max_cpu;
         max_mem += e->max_mem;
         avg_cpu += e->avg_cpu;
         avg_mem += e->avg_mem;
-        //if (e->max_cpu > 0) {
-        //  assert(e->max_cpu >= e->avg_cpu);
-        //  assert(e->max_mem >= e->avg_mem);
-        //} else {
-        //  assert(e->max_cpu <= e->avg_cpu);
-        //  assert(e->max_mem <= e->avg_mem);
-        //}
-        //std::cout <<
-        //  "max_cpu: " << max_cpu
-        //  << " max_mem:" << max_mem
-        //  << " avg_cpu: " << avg_cpu
-        //  << " avg_mem: " << avg_mem
-        //  << " e->max_cpu: " << e->max_cpu
-        //  << " e->avg_cpu: " << e->avg_cpu
-        //  << std::endl;
       }
 
       //assert(timestamp > lambda_lifetime_secs * MICROSEC_IN_SECOND);
@@ -388,6 +457,7 @@ void compute_events_per_machine(
   }
 }
 
+#if 0
 void compute_events_per_machine_simple_policy(
     int lambda_lifetime_secs,
     double lambda_cpu_size,
@@ -536,18 +606,19 @@ void compute_events_per_machine_simple_policy(
       << "\n";
   }
 }
+#endif
 
 int main(int argc, char* argv[]) {
     clear_datastructures();
 
     std::cout << "Reading machine events" << std::endl;
     read_machine_events(
-        "/data/joao/google_clusterdata/clusterdata-2011-1/machine_events/table_machine_events.csv");
+        "/data/joao/f8_data/table_machine_events.csv");
     std::cout << "Machine events done" << std::endl;
     
     std::cout << "Reading task usage events" << std::endl;
-    read_usage_events(
-        "/data/joao/google_clusterdata/clusterdata-2011-1/task_usage/table_task_usage.csv_compressed_1M");
+    read_usage_events_parallel(
+        "/data/joao/f8_data/table_task_usage.csv_compressed");
     std::cout << "Reading task usage done" << std::endl;
 
     std::string line;
@@ -567,9 +638,9 @@ int main(int argc, char* argv[]) {
         uint64_t time = it->first;
 
         // update all the events
-        for (std::vector<Event*>::iterator ev = it->second.begin();
+        for (std::vector<std::shared_ptr<Event>>::iterator ev = it->second.begin();
                 ev != it->second.end(); ++ev) {
-            Event* e = *ev;
+            Event* e = ev->get();
 
             uint64_t machine_id = e->machine_id;
             if (dynamic_cast<MachineEvent*>(e)) {
