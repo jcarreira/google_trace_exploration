@@ -70,30 +70,33 @@ int main(int argc, char* argv[]) {
     line.erase(line.begin());
     Tokenize(line, tokens, ",");
 
-    std::string job_id = tokens[0];
-    std::string task_id = tokens[1];
-    std::string machine_id = tokens[2];
+    std::string task_id = tokens[0];
+    std::string machine_id = tokens[1];
     std::string unique_task_id = machine_id + "-" + job_id + "-" + task_id;
-    std::string mean_cpu = tokens[3];
-    std::string canonical_mem = tokens[4];
+    std::string mean_cpu = tokens[2];
+    std::string canonical_mem = tokens[3];
+    std::string max_memory = tokens[4];
+    std::string max_cpu = tokens[5];
 
     //std::cout << unique_task_id << std::endl;
 
-    double cpu = to_T<double>(mean_cpu);
-    double mem = to_T<double>(canonical_mem);
+    double mean_cpu = to_T<double>(mean_cpu);
+    double mean_mem = to_T<double>(canonical_mem);
+    double max_cpu = to_T<double>(mean_cpu);
+    double max_mem = to_T<double>(canonical_mem);
 
-    if (cpu > 1 || cpu <= 0 || mem > 1 || mem <= 0)
+    if (mean_cpu > 1 || mean_cpu <= 0 || mean_mem > 1 || mean_mem <= 0)
       continue;
 
-    task_to_mem_sum[unique_task_id] += mem;
-    task_to_cpu_sum[unique_task_id] += cpu;
+    task_to_mem_sum[unique_task_id] += mean_mem;
+    task_to_cpu_sum[unique_task_id] += mean_cpu;
     task_to_size[unique_task_id]++;
     task_to_mem_max[unique_task_id] = std::max(
         task_to_mem_max[unique_task_id],
-        mem);
+        max_mem);
     task_to_cpu_max[unique_task_id] = std::max(
         task_to_cpu_max[unique_task_id],
-        cpu);
+        max_cpu);
 
     if (line_count % 100000 == 0)
       std::cout << "Line: " << line_count << std::endl;
