@@ -454,27 +454,50 @@ void compute_events_per_machine_simple_policy(
 
       // we compute the max_cpu and mem in the seconds before
       auto it2 = it;
-      double max_cpu = 0, max_mem = 0;
+      double max_cpu1 = 0, max_mem1 = 0;
       for (; US_TO_SEC(timestamp - it2->first) < lambda_lifetime_secs; --it2) {
 
         //max_cpu = std::max(max_cpu, time_to_max_resources[it2->first].first);
         //max_mem = std::max(max_mem, time_to_max_resources[it2->first].second);
         auto v = time_to_avg_resources[it2->first];
-        max_cpu = std::max(max_cpu, v.first);
-        max_mem = std::max(max_mem, v.second);
+        max_cpu1 = std::max(max_cpu, v.first);
+        max_mem1 = std::max(max_mem, v.second);
 
         if (it2 == list_machine_events.begin())
           break;
       }
-
-      double hole_cpu = (machine_cpu_capacity - max_cpu);
-      double hole_mem = (machine_mem_capacity - max_mem);
-      if (max_cpu < machine_cpu_capacity
-          && max_mem < machine_mem_capacity
-          && hole_cpu >= lambda_cpu_size
-          && hole_mem >= lambda_mem_size) {
-        double num_lambdas = std::floor(std::min(hole_cpu / lambda_cpu_size, hole_mem / lambda_mem_size));
+      // we compute the max_cpu and mem in the seconds after
+      double max_cpu2 = 0, max_mem2 = 0;
+      for (it2 = it; it2 != list_machine_events.end() && US_TO_SEC(it2->first - timestamp) < lambda_lifetime_secs; ++it2) {
+        auto v = time_to_avg_resources[it2->first];
+        max_cpu2 = std::max(max_cpu, v.first);
+        max_mem2 = std::max(max_mem, v.second);
+        if (it2 == list_machine_events.begin())
+          break;
+      }
+      double hole_cpu1 = (machine_cpu_capacity - max_cpu1);
+      double hole_mem1 = (machine_mem_capacity - max_mem1);
+      double hole_cpu2 = (machine_cpu_capacity - max_cpu2);
+      double hole_mem2 = (machine_mem_capacity - max_mem2);
+      if (max_cpu1 < machine_cpu_capacity
+          && max_cpu2 < machine_mem_capacity
+          && max_mem1 < machine_mem_capacity
+          && max_mem2 < machine_mem_capacity
+          && hole_cpu1 >= lambda_cpu_size
+          && hole_cpu2 >= lambda_cpu_size
+          && hole_mem1 >= lambda_mem_size
+          && hole_mem2 >= lambda_mem_size) {
+        double num_lambdas = std::floor(
+            std::min(
+              hole_cpu1 / lambda_cpu_size,
+              std::min(
+              hole_cpu2 / lambda_cpu_size,
+              std::min(
+              hole_mem1 / lambda_mem_size,
+              hole_mem2 / lambda_mem_size))));
         assert(num_lambdas >= 0);
+        if (num_lambdas == 0)
+          continue;
         
         auto it2 = it;
         for (; US_TO_SEC(timestamp - it2->first) < lambda_lifetime_secs; --it2) {
@@ -499,9 +522,6 @@ void compute_events_per_machine_simple_policy(
     cum_avg_cpu = cum_avg_mem = count = 0;
     for (const auto& timestamp_events : list_machine_events) {
       uint64_t timestamp = timestamp_events.first;
-      time_to_max_resources[timestamp] = std::make_pair(max_cpu, max_mem);
-      time_to_avg_resources[timestamp] = std::make_pair(avg_cpu, avg_mem);
-
       auto v = time_to_avg_resources[timestamp];
       cum_avg_cpu += v.first;
       cum_avg_mem += v.second;
@@ -533,7 +553,7 @@ int main(int argc, char* argv[]) {
     std::string line;
 
     //compute_events_per_machine(
-    compute_events_per_machine_simple_policy(
+    compute_events_per_machine(
         200, // seconds
         0.1, // cpu size,
         0.1); // mem size
