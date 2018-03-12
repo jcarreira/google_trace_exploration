@@ -36,18 +36,38 @@ T to_T(const std::string& str) {
     return ret;
 }
 
-uint64_t read_file(char*& data, const std::string& file) {
-    data = new char[FILE_SIZE];
-    memset(data, 0, FILE_SIZE);
+uint64_t read_file(char*& data, const std::string& file, uint64_t file_size = FILE_SIZE) {
+    data = new char[file_size];
+    memset(data, 0, file_size);
     if (!data)
         exit(-1);
 
     FILE* fin = fopen(file.c_str(), "r");
 
-    uint64_t size = fread(data, 1, FILE_SIZE, fin);
+    uint64_t size = fread(data, 1, file_size, fin);
 
     fclose(fin);
     return size;
+}
+
+void Tokenize(const char* data, uint64_t first, uint64_t last,
+        vector<string>& tokens,
+        const string& delimiters = " ")
+{
+    uint64_t i = first;
+    uint64_t j = first;
+
+    while (1) {
+        while(data[j] && data[j] != delimiters[0])
+            ++j;
+
+        tokens.push_back(std::string(data + i, j - i));
+
+        ++j; // skip delimiter
+        if (j >= last) break;
+
+        i = j;
+    }
 }
 
 void Tokenize(const string& str,
@@ -160,23 +180,51 @@ uint64_t machine_counter = 0;
 std::unordered_map<std::string, uint64_t> machineid_to_uint;
 
 // we keep a list of usage events per machine
-std::map<uint64_t, std::map<uint64_t, std::vector<std::shared_ptr<Event>>>> events_per_machine;
+std::vector<std::map<uint64_t, std::vector<std::shared_ptr<Event>>>> events_per_machine;
+//std::map<uint64_t, std::map<uint64_t, std::vector<std::shared_ptr<Event>>>> events_per_machine;
 
 void read_usage_events_thread(
     std::ifstream& fin,
     std::mutex& fin_mutex,
     std::mutex& data_mutex,
-    std::atomic<int>& counter) {
+    std::atomic<int>& counter,
+    uint64_t& first,
+    uint64_t& last,
+    char* file_data,
+    uint64_t file_size) {
   std::string line;
   while (1) {
     fin_mutex.lock();
-    std::getline(fin, line);
+    //std::getline(fin, line);
+    if (last >= file_size || !file_data[last])
+      break;
+
+    // update left pointer
+    first = last;
+    while (last < file_size && file_data[last] != '\n' && file_data[last])
+      last++;
+
+    last++; // jump the newline. if its null we hope the next is null too
+    uint64_t local_first = first;
+    uint64_t local_last = last;
     fin_mutex.unlock();
 
     std::vector<std::string> tokens;
-    Tokenize(line, tokens, " ");
+    //Tokenize(line, tokens, " ");
+    Tokenize(file_data, local_first, local_last, tokens, " ");
 
-    assert(tokens.size() == 7);
+    if (tokens.size() != 7) {
+      fin_mutex.lock();
+      std::cout << "tokens:" << std::endl;
+      std::cout << "counter:" << counter << std::endl;
+      std::cout << "local_first:" << local_first << std::endl;
+      std::cout << "local_last:" << local_last << std::endl;
+      for (const auto& v : tokens) {
+        std::cout << v << std::endl;
+      }
+      fin_mutex.unlock();
+      assert(tokens.size() == 7);
+    }
 
     uint64_t start_time = to_T<double>(tokens[0]);
     uint64_t end_time = to_T<double>(tokens[1]);
@@ -193,10 +241,11 @@ void read_usage_events_thread(
       continue;
 
     // machineid not found
-    if (machineid_to_uint.find(machine_id) == machineid_to_uint.end())
+    auto it = machineid_to_uint.find(machine_id);
+    if (it == machineid_to_uint.end())
       continue;
 
-    uint64_t machine_uint = machineid_to_uint[machine_id];
+    uint64_t machine_uint = it->second;
 
     auto ue_start = std::make_shared<UsageEvent>("", machine_uint, avg_cpu, avg_mem, max_cpu, max_mem);
     auto ue_end = std::make_shared<UsageEvent>("", machine_uint, -avg_cpu, -avg_mem, -max_cpu, -max_mem);
@@ -209,7 +258,7 @@ void read_usage_events_thread(
     data_mutex.unlock();
 
     if (counter % 100000 == 0) {
-      std::cout << "usage file counter: " << counter << "\n";
+      std::cout << "usage file counter: " << counter << std::endl;
     }
 
     counter += 1;
@@ -219,21 +268,31 @@ void read_usage_events_thread(
 void read_usage_events_parallel(const std::string& file) {
   std::vector<std::shared_ptr<std::thread>> threads;
     
+  char* file_data;
+  uint64_t file_size = read_file(file_data,
+      file.c_str(),
+      85619591193);
+    
   std::ifstream fin(file);
   std::mutex fin_mutex;
   std::mutex data_mutex;
   std::atomic<int> counter;
-
   std::atomic_init(&counter, 0);
 
-  for (int i = 0; i < 50; ++i) {
+  uint64_t first = 0, last = 0;
+
+  for (int i = 0; i < 10; ++i) {
     threads.push_back(
         std::make_shared<std::thread>(
           read_usage_events_thread,
           std::ref(fin),
           std::ref(fin_mutex),
           std::ref(data_mutex),
-          std::ref(counter)
+          std::ref(counter),
+          std::ref(first),
+          std::ref(last),
+          file_data,
+          file_size
           ));
   }
 
@@ -331,6 +390,8 @@ void clear_datastructures() {
     memset(machine_to_mem_utilized, 0, sizeof(machine_to_mem_utilized));
     memset(machine_to_max_mem_utilized, 0, sizeof(machine_to_max_mem_utilized));
     memset(machine_to_max_cpu_utilized, 0, sizeof(machine_to_max_cpu_utilized));
+
+    events_per_machine.resize(13000);
 }
 
 // I go through every machine and I create a new list of
@@ -346,12 +407,16 @@ void compute_events_per_machine(
     double lambda_cpu_size,
     double lambda_mem_size) {
   // we traverse all machines
-  for (const auto& it : events_per_machine) {
-    uint64_t machine_id = it.first;
+  for (uint64_t machine_id = 0; machine_id < events_per_machine.size(); ++machine_id) {
+    if (events_per_machine[machine_id].size() == 0) {
+      continue;
+    }
+  //for (const auto& it : events_per_machine) {
+    //uint64_t machine_id = it.first;
 
     std::map<uint64_t, std::pair<double, double>> time_to_max_resources;
     std::map<uint64_t, std::pair<double, double>> time_to_avg_resources;
-    const auto& list_machine_events = it.second;
+    const auto& list_machine_events = events_per_machine[machine_id];//it.second;
 
     // we use this to compute the average of the average cpu and memory over time
     double cum_avg_cpu = 0, cum_avg_mem = 0;

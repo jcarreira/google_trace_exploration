@@ -55,6 +55,8 @@ int main(int argc, char* argv[]) {
   std::string line;
   std::map<std::string, double> task_to_mem_max;
   std::map<std::string, double> task_to_cpu_max;
+  std::map<std::string, double> task_to_mem_max_old; // old way of computing these two values
+  std::map<std::string, double> task_to_cpu_max_old;
   std::map<std::string, uint64_t> task_to_size;
   std::map<std::string, double> task_to_mem_sum;
   std::map<std::string, double> task_to_cpu_sum;
@@ -68,22 +70,23 @@ int main(int argc, char* argv[]) {
 
     // compressed file has an issue
     line.erase(line.begin());
-    Tokenize(line, tokens, ",");
+    Tokenize(line, tokens, " ");
 
-    std::string task_id = tokens[0];
-    std::string machine_id = tokens[1];
+    std::string job_id = tokens[0];
+    std::string task_id = tokens[1];
+    std::string machine_id = tokens[2];
     std::string unique_task_id = machine_id + "-" + job_id + "-" + task_id;
-    std::string mean_cpu = tokens[2];
-    std::string canonical_mem = tokens[3];
-    std::string max_memory = tokens[4];
-    std::string max_cpu = tokens[5];
+    std::string mean_cpu_str = tokens[3];
+    std::string canonical_mem_str = tokens[4];
+    std::string max_memory_str = tokens[5];
+    std::string max_cpu_str = tokens[6];
 
     //std::cout << unique_task_id << std::endl;
 
-    double mean_cpu = to_T<double>(mean_cpu);
-    double mean_mem = to_T<double>(canonical_mem);
-    double max_cpu = to_T<double>(mean_cpu);
-    double max_mem = to_T<double>(canonical_mem);
+    double mean_cpu = to_T<double>(mean_cpu_str);
+    double mean_mem = to_T<double>(canonical_mem_str);
+    double max_cpu = to_T<double>(max_cpu_str);
+    double max_mem = to_T<double>(max_memory_str);
 
     if (mean_cpu > 1 || mean_cpu <= 0 || mean_mem > 1 || mean_mem <= 0)
       continue;
@@ -91,12 +94,19 @@ int main(int argc, char* argv[]) {
     task_to_mem_sum[unique_task_id] += mean_mem;
     task_to_cpu_sum[unique_task_id] += mean_cpu;
     task_to_size[unique_task_id]++;
+
     task_to_mem_max[unique_task_id] = std::max(
         task_to_mem_max[unique_task_id],
         max_mem);
+    task_to_mem_max_old[unique_task_id] = std::max(
+        task_to_mem_max_old[unique_task_id],
+        mean_mem);
     task_to_cpu_max[unique_task_id] = std::max(
         task_to_cpu_max[unique_task_id],
         max_cpu);
+    task_to_cpu_max_old[unique_task_id] = std::max(
+        task_to_cpu_max_old[unique_task_id],
+        mean_cpu);
 
     if (line_count % 100000 == 0)
       std::cout << "Line: " << line_count << std::endl;
@@ -122,6 +132,8 @@ int main(int argc, char* argv[]) {
 
     double ratio_mem = mem_max / mem_avg;
     double ratio_cpu = cpu_max / cpu_avg;
+    double ratio_mem_old = task_to_mem_max_old[unique_task_id] / mem_avg;
+    double ratio_cpu_old = task_to_cpu_max_old[unique_task_id] / cpu_avg;
 
     std::cout
       << cpu_max << " "
@@ -130,6 +142,8 @@ int main(int argc, char* argv[]) {
       << mem_avg << " "
       << ratio_cpu << " "
       << ratio_mem << " "
+      << ratio_cpu_old << " "
+      << ratio_mem_old
       << "\n";
   }
 
